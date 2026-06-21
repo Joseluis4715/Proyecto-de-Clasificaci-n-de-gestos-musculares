@@ -1,0 +1,1263 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>EMG Dino — Control Muscular</title>
+<meta name="description" content="Juego del dinosaurio controlado por señales EMG desde ESP32 — Universidad del Cauca, Bioingeniería 2026">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+
+  :root {
+    --bg:         #060A10;
+    --bg-subtle:  #0B1018;
+    --panel:      #0D1219;
+    --panel-alt:  #111820;
+    --card:       #0F1520;
+    --border:     #1A2232;
+    --border-hi:  #243045;
+    --teal:       #00E5BD;
+    --teal-dim:   #00B89A;
+    --teal-glow:  rgba(0,229,189,0.25);
+    --purple:     #A855F7;
+    --purple-dim: #8B3FD9;
+    --purple-glow:rgba(168,85,247,0.25);
+    --orange:     #F59E0B;
+    --orange-dim: #D97706;
+    --orange-glow:rgba(245,158,11,0.25);
+    --gray:       #64748B;
+    --gray-dim:   #475569;
+    --gray-glow:  rgba(100,116,139,0.15);
+    --red:        #EF4444;
+    --white:      #F1F5F9;
+    --muted:      #64748B;
+    --muted-dim:  #475569;
+    --heading:    'Orbitron', sans-serif;
+    --mono:       'JetBrains Mono', monospace;
+    --sans:       'Inter', sans-serif;
+    --accent:     var(--gray);
+    --accent-glow:var(--gray-glow);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--white);
+    font-family: var(--sans);
+    height: 100vh;
+    display: grid;
+    grid-template-rows: 56px 1fr;
+    overflow: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background:
+      radial-gradient(ellipse 80% 60% at 30% 50%, rgba(0,229,189,0.03) 0%, transparent 70%),
+      radial-gradient(ellipse 60% 50% at 80% 40%, rgba(168,85,247,0.02) 0%, transparent 70%),
+      repeating-linear-gradient(0deg, transparent, transparent 59px, rgba(26,34,50,0.3) 59px, rgba(26,34,50,0.3) 60px),
+      repeating-linear-gradient(90deg, transparent, transparent 59px, rgba(26,34,50,0.3) 59px, rgba(26,34,50,0.3) 60px);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* ══ HEADER ══ */
+  header {
+    position: relative;
+    z-index: 10;
+    background: linear-gradient(180deg, var(--panel) 0%, var(--bg-subtle) 100%);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    gap: 16px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  }
+
+  header::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent 0%, var(--teal) 20%, var(--purple) 50%, var(--orange) 80%, transparent 100%);
+    opacity: 0.4;
+  }
+
+  header .logo {
+    font-family: var(--heading);
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--teal);
+    letter-spacing: 3px;
+    text-shadow: 0 0 20px var(--teal-glow);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  header .logo::before {
+    content: '';
+    display: block;
+    width: 28px; height: 28px;
+    background: linear-gradient(135deg, var(--teal), var(--purple));
+    border-radius: 6px;
+    opacity: 0.9;
+    box-shadow: 0 0 12px var(--teal-glow);
+  }
+
+  header .logo .slash { color: var(--muted-dim); margin: 0 -2px; font-weight: 400; }
+
+  .header-conn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 16px;
+    padding: 6px 14px;
+    background: rgba(255,255,255,0.03);
+    border-radius: 20px;
+    border: 1px solid var(--border);
+  }
+
+  header .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--red);
+    transition: background 0.3s;
+    flex-shrink: 0;
+    box-shadow: 0 0 6px rgba(239,68,68,0.4);
+  }
+
+  header .dot.on {
+    background: var(--teal);
+    box-shadow: 0 0 8px var(--teal), 0 0 20px var(--teal-glow);
+    animation: dotPulse 2s ease-in-out infinite;
+  }
+
+  @keyframes dotPulse {
+    0%, 100% { box-shadow: 0 0 6px var(--teal), 0 0 12px var(--teal-glow); opacity: 1; }
+    50%      { box-shadow: 0 0 12px var(--teal), 0 0 30px var(--teal-glow); opacity: 0.8; }
+  }
+
+  header .status {
+    font-size: 11px;
+    font-family: var(--mono);
+    font-weight: 400;
+    color: var(--muted);
+    transition: color 0.3s;
+  }
+  header .status.on { color: var(--teal); }
+
+  .header-uni {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted-dim);
+    letter-spacing: 1px;
+  }
+
+  .header-uni .uni-badge {
+    padding: 4px 10px;
+    background: rgba(168,85,247,0.08);
+    border: 1px solid rgba(168,85,247,0.15);
+    border-radius: 4px;
+    color: var(--purple);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  /* ══ MAIN LAYOUT ══ */
+  main {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 1fr 360px;
+    gap: 0;
+    overflow: hidden;
+  }
+
+  /* ══ GAME ZONE ══ */
+  .game-zone {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 28px 32px 20px;
+    gap: 16px;
+    position: relative;
+  }
+
+  .game-label {
+    font-family: var(--heading);
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--muted-dim);
+    letter-spacing: 5px;
+    text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .game-label::before, .game-label::after {
+    content: '';
+    width: 40px; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--border-hi), transparent);
+  }
+
+  #gameCanvas {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: #0A0F16;
+    image-rendering: pixelated;
+    width: 100%;
+    max-width: 740px;
+    height: 240px;
+    box-shadow: 0 0 0 1px rgba(0,229,189,0.05), 0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.02);
+    transition: box-shadow 0.3s;
+  }
+
+  .game-zone.turbo #gameCanvas {
+    box-shadow: 0 0 0 1px rgba(245,158,11,0.15), 0 0 30px rgba(245,158,11,0.08), 0 8px 32px rgba(0,0,0,0.5), inset 0 1px 0 rgba(245,158,11,0.05);
+    border-color: rgba(245,158,11,0.3);
+  }
+
+  .game-zone.turbo::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 60% 80% at 50% 50%, rgba(245,158,11,0.04) 0%, transparent 70%);
+    pointer-events: none;
+    animation: turboFlash 0.5s ease-in-out infinite alternate;
+    z-index: 0;
+  }
+
+  @keyframes turboFlash {
+    0%   { opacity: 0.3; }
+    100% { opacity: 1; }
+  }
+
+  .turbo-lines {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+    opacity: 0;
+    transition: opacity 0.3s;
+    z-index: 0;
+  }
+
+  .game-zone.turbo .turbo-lines { opacity: 1; }
+
+  .turbo-lines .line {
+    position: absolute;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(245,158,11,0.3), transparent);
+    animation: speedLine 0.6s linear infinite;
+  }
+  .turbo-lines .line:nth-child(1) { top: 20%; width: 120px; left: 5%;  animation-delay: 0s;     animation-duration: 0.5s; }
+  .turbo-lines .line:nth-child(2) { top: 35%; width: 80px;  left: 10%; animation-delay: 0.15s;  animation-duration: 0.6s; }
+  .turbo-lines .line:nth-child(3) { top: 55%; width: 150px; left: 2%;  animation-delay: 0.3s;   animation-duration: 0.45s; }
+  .turbo-lines .line:nth-child(4) { top: 70%; width: 100px; left: 8%;  animation-delay: 0.1s;   animation-duration: 0.55s; }
+  .turbo-lines .line:nth-child(5) { top: 85%; width: 90px;  left: 15%; animation-delay: 0.25s;  animation-duration: 0.5s; }
+
+  @keyframes speedLine {
+    0%   { transform: translateX(-100%); opacity: 0; }
+    20%  { opacity: 1; }
+    80%  { opacity: 1; }
+    100% { transform: translateX(800px); opacity: 0; }
+  }
+
+  .score-row {
+    display: flex;
+    gap: 28px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--muted);
+    align-items: center;
+  }
+
+  .score-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+
+  .score-item .label { font-size: 9px; font-weight: 600; letter-spacing: 2px; color: var(--muted-dim); }
+  .score-item span  { color: var(--white); font-weight: 700; font-size: 15px; letter-spacing: 2px; }
+  .score-item:nth-child(1) span { color: var(--teal); text-shadow: 0 0 10px var(--teal-glow); }
+  .score-item:nth-child(2) span { color: var(--orange); }
+  .score-item:nth-child(3) span { color: var(--purple); }
+
+  .instruccion {
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    padding: 10px 20px;
+    background: rgba(0,229,189,0.04);
+    border: 1px solid rgba(0,229,189,0.1);
+    border-radius: 8px;
+    animation: instrPulse 3s ease-in-out infinite;
+  }
+  .instruccion span { color: var(--teal); font-weight: 600; }
+
+  @keyframes instrPulse {
+    0%, 100% { border-color: rgba(0,229,189,0.1); }
+    50%      { border-color: rgba(0,229,189,0.25); }
+  }
+
+  /* ══ GAME OVER ══ */
+  #overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    background: rgba(6,10,16,0.92);
+    backdrop-filter: blur(8px);
+    border-radius: 8px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.4s;
+    z-index: 50;
+  }
+  #overlay.show { opacity: 1; pointer-events: all; }
+  #overlay h2 {
+    font-family: var(--heading);
+    font-size: 36px;
+    font-weight: 900;
+    color: var(--red);
+    letter-spacing: 8px;
+    text-shadow: 0 0 30px rgba(239,68,68,0.3);
+  }
+  #overlay p { font-size: 12px; color: var(--muted); font-family: var(--mono); letter-spacing: 1px; }
+  #btnRestart {
+    margin-top: 8px;
+    padding: 12px 36px;
+    background: linear-gradient(135deg, var(--teal), var(--teal-dim));
+    color: #000;
+    border: none;
+    border-radius: 8px;
+    font-family: var(--heading);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.2s;
+    box-shadow: 0 4px 20px var(--teal-glow);
+  }
+  #btnRestart:hover { transform: translateY(-2px); box-shadow: 0 6px 30px var(--teal-glow); }
+  #btnRestart:active { transform: translateY(0); }
+
+  /* ══ SIDE PANEL ══ */
+  .side-panel {
+    background: linear-gradient(180deg, var(--panel) 0%, var(--bg-subtle) 100%);
+    border-left: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    overflow-y: auto;
+    position: relative;
+  }
+
+  .side-panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: -1px;
+    width: 1px; height: 100%;
+    background: linear-gradient(180deg, var(--teal) 0%, var(--purple) 50%, transparent 100%);
+    opacity: 0.2;
+  }
+
+  .side-panel::-webkit-scrollbar { width: 3px; }
+  .side-panel::-webkit-scrollbar-track { background: transparent; }
+  .side-panel::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 3px; }
+
+  .panel-section {
+    padding: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .panel-title {
+    font-size: 9px;
+    font-family: var(--heading);
+    font-weight: 600;
+    color: var(--muted-dim);
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    margin-bottom: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .panel-title::before {
+    content: '';
+    width: 3px; height: 12px;
+    background: var(--teal);
+    border-radius: 2px;
+    box-shadow: 0 0 8px var(--teal-glow);
+  }
+
+  /* ══ GESTO DETECTADO ══ */
+  .gesto-card {
+    background: var(--card);
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    border: 1px solid var(--border);
+    transition: border-color 0.3s, box-shadow 0.3s, background 0.3s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .gesto-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 20% 50%, var(--accent-glow) 0%, transparent 70%);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  .gesto-card.active::before { opacity: 1; }
+  .gesto-card.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 24px var(--accent-glow), inset 0 0 24px rgba(0,0,0,0.2);
+  }
+
+  .gesto-emoji {
+    font-size: 44px;
+    line-height: 1;
+    position: relative;
+    z-index: 1;
+    transition: transform 0.2s, filter 0.3s;
+    filter: drop-shadow(0 0 12px var(--accent-glow));
+  }
+
+  .gesto-emoji.pulse { animation: gestoPulse 0.4s cubic-bezier(0.17, 0.67, 0.35, 1.5); }
+
+  @keyframes gestoPulse {
+    0%   { transform: scale(1) rotate(0deg); }
+    30%  { transform: scale(1.4) rotate(-5deg); }
+    60%  { transform: scale(1.1) rotate(3deg); }
+    100% { transform: scale(1) rotate(0deg); }
+  }
+
+  .gesto-info { position: relative; z-index: 1; }
+  .gesto-nombre {
+    font-family: var(--heading);
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--white);
+    line-height: 1.2;
+    letter-spacing: 1px;
+  }
+  .gesto-accion {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--accent);
+    font-family: var(--mono);
+    margin-top: 4px;
+    letter-spacing: 2px;
+    transition: color 0.3s;
+  }
+
+  /* ══ CONTROLES ══ */
+  .controles-grid { display: flex; flex-direction: column; gap: 6px; }
+
+  .control-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    transition: all 0.25s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .control-item::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 3px;
+    background: var(--muted-dim);
+    border-radius: 0 3px 3px 0;
+    transition: background 0.25s, box-shadow 0.25s;
+  }
+
+  #ctrl-puno::before         { background: var(--teal-dim); }
+  #ctrl-mano_abierta::before { background: var(--purple-dim); }
+  #ctrl-giro::before         { background: var(--orange-dim); }
+  #ctrl-reposo::before       { background: var(--gray-dim); }
+
+  .control-item.highlight {
+    background: rgba(255,255,255,0.03);
+    border-color: var(--accent);
+    transform: translateX(4px);
+  }
+
+  #ctrl-puno.highlight         { border-color: var(--teal); box-shadow: 0 0 16px var(--teal-glow); }
+  #ctrl-puno.highlight::before { background: var(--teal); box-shadow: 0 0 8px var(--teal); }
+  #ctrl-mano_abierta.highlight         { border-color: var(--purple); box-shadow: 0 0 16px var(--purple-glow); }
+  #ctrl-mano_abierta.highlight::before { background: var(--purple); box-shadow: 0 0 8px var(--purple); }
+  #ctrl-giro.highlight         { border-color: var(--orange); box-shadow: 0 0 16px var(--orange-glow); }
+  #ctrl-giro.highlight::before { background: var(--orange); box-shadow: 0 0 8px var(--orange); }
+  #ctrl-reposo.highlight         { border-color: var(--gray); box-shadow: 0 0 16px var(--gray-glow); }
+  #ctrl-reposo.highlight::before { background: var(--gray); box-shadow: 0 0 8px var(--gray); }
+
+  .control-emoji { font-size: 22px; width: 32px; text-align: center; transition: transform 0.2s; }
+  .control-item.highlight .control-emoji { transform: scale(1.15); }
+  .control-gesto { font-family: var(--mono); font-size: 12px; font-weight: 600; color: var(--white); letter-spacing: 0.5px; }
+  .control-desc  { font-size: 10px; color: var(--muted); margin-top: 2px; }
+
+  /* ══ SEÑAL EMG ══ */
+  .signal-wrap {
+    position: relative;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: var(--card);
+  }
+
+  #signalCanvas { width: 100%; height: 70px; display: block; background: var(--card); }
+
+  .signal-overlay-label {
+    position: absolute;
+    top: 6px; right: 8px;
+    font-family: var(--mono);
+    font-size: 8px;
+    font-weight: 600;
+    color: var(--muted-dim);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .emg-bar-section { margin-top: 12px; }
+  .emg-bar-label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .emg-bar-label span { font-size: 9px; font-family: var(--mono); font-weight: 500; color: var(--muted-dim); letter-spacing: 2px; }
+
+  .emg-bar-wrap {
+    background: var(--card);
+    border-radius: 6px;
+    height: 8px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+
+  .emg-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--teal-dim), var(--teal));
+    border-radius: 6px;
+    transition: width 0.1s ease, background 0.3s;
+    box-shadow: 0 0 12px var(--teal-glow);
+    position: relative;
+  }
+
+  .emg-bar::after {
+    content: '';
+    position: absolute;
+    right: 0; top: 0; bottom: 0;
+    width: 20px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2));
+    border-radius: 6px;
+  }
+
+  /* ══ FOOTER ══ */
+  .panel-footer { padding: 16px 20px; display: flex; flex-direction: column; gap: 8px; }
+  .tech-stack { display: flex; flex-wrap: wrap; gap: 5px; }
+  .tech-tag {
+    font-family: var(--mono);
+    font-size: 8px;
+    font-weight: 500;
+    color: var(--muted);
+    padding: 3px 8px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .panel-credit {
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--muted-dim);
+    letter-spacing: 1px;
+    text-align: center;
+    margin-top: 4px;
+  }
+
+  .game-zone.turbo .score-item:nth-child(3) {
+    border-color: rgba(245,158,11,0.3);
+    box-shadow: 0 0 12px rgba(245,158,11,0.1);
+  }
+  .game-zone.turbo .score-item:nth-child(3) span {
+    color: var(--orange);
+    text-shadow: 0 0 8px var(--orange-glow);
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">EMG <span class="slash">//</span> DINO</div>
+  <div class="header-conn">
+    <div class="dot" id="dot"></div>
+    <span class="status" id="statusTxt">Sin conexión — corre servidor.py</span>
+  </div>
+  <div class="header-uni">
+    <span class="uni-badge">BIOINGENIERÍA</span>
+    <span>Universidad del Cauca · 2026</span>
+  </div>
+</header>
+
+<main>
+  <!-- ══ ZONA DE JUEGO ══ -->
+  <div class="game-zone" id="gameZone">
+    <div class="turbo-lines">
+      <div class="line"></div><div class="line"></div><div class="line"></div><div class="line"></div><div class="line"></div>
+    </div>
+    <div class="game-label">campo de juego</div>
+    <canvas id="gameCanvas" width="700" height="220"></canvas>
+    <div class="score-row">
+      <div class="score-item"><span class="label">PUNTOS</span><span id="scoreDisplay">00000</span></div>
+      <div class="score-item"><span class="label">RÉCORD</span><span id="hiDisplay">00000</span></div>
+      <div class="score-item"><span class="label">GESTO</span><span id="gestoCurrent">REPOSO</span></div>
+    </div>
+    <div class="instruccion" id="instruccion"><span>✊ Aprieta el puño</span> para iniciar</div>
+    <div id="overlay">
+      <h2>GAME OVER</h2>
+      <p>Haz un gesto para continuar</p>
+      <button id="btnRestart">REINICIAR</button>
+    </div>
+  </div>
+
+  <!-- ══ PANEL LATERAL ══ -->
+  <div class="side-panel">
+    <div class="panel-section">
+      <div class="panel-title">gesto detectado</div>
+      <div class="gesto-card" id="gestoCard">
+        <div class="gesto-emoji" id="gestoEmoji">✋</div>
+        <div class="gesto-info">
+          <div class="gesto-nombre" id="gestoNombre">Reposo</div>
+          <div class="gesto-accion" id="gestoAccion">QUIETO</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-title">señal emg</div>
+      <div class="signal-wrap">
+        <canvas id="signalCanvas" width="320" height="70"></canvas>
+        <div class="signal-overlay-label">EN VIVO</div>
+      </div>
+      <div class="emg-bar-section">
+        <div class="emg-bar-label"><span>INTENSIDAD</span><span id="emgPct">0%</span></div>
+        <div class="emg-bar-wrap"><div class="emg-bar" id="emgBar"></div></div>
+      </div>
+    </div>
+
+    <div class="panel-section">
+      <div class="panel-title">controles</div>
+      <div class="controles-grid">
+        <div class="control-item" id="ctrl-puno">
+          <div class="control-emoji">✊</div>
+          <div class="control-text">
+            <div class="control-gesto">Puño cerrado</div>
+            <div class="control-desc">Dinosaurio SALTA</div>
+          </div>
+        </div>
+        <div class="control-item" id="ctrl-mano_abierta">
+          <div class="control-emoji">🖐</div>
+          <div class="control-text">
+            <div class="control-gesto">Mano abierta</div>
+            <div class="control-desc">Dinosaurio SE AGACHA</div>
+          </div>
+        </div>
+        <div class="control-item" id="ctrl-giro">
+          <div class="control-emoji">🔄</div>
+          <div class="control-text">
+            <div class="control-gesto">Giro de muñeca</div>
+            <div class="control-desc">⚡ TURBO — corre más rápido</div>
+          </div>
+        </div>
+        <div class="control-item" id="ctrl-reposo">
+          <div class="control-emoji">✋</div>
+          <div class="control-text">
+            <div class="control-gesto">Reposo</div>
+            <div class="control-desc">Corre normal — sin saltar</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-footer">
+      <div class="tech-stack">
+        <span class="tech-tag">ESP32</span><span class="tech-tag">AD8232</span>
+        <span class="tech-tag">SVM</span><span class="tech-tag">WebSocket</span><span class="tech-tag">EMG</span>
+      </div>
+      <div class="panel-credit">Ing. Automática Industrial · 2026</div>
+    </div>
+  </div>
+</main>
+
+<script>
+// ══════════════════════════════════════════════
+//  JUEGO DEL DINOSAURIO
+// ══════════════════════════════════════════════
+const canvas  = document.getElementById('gameCanvas');
+const ctx     = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+const SUELO   = H - 40;
+
+let score = 0, hi = 0, gameOver = false, gameStarted = false;
+let velocidad = 3.5;
+let gestoActual = "reposo";
+let frameCount = 0;
+
+// ── Dinosaurio ──
+const dino = {
+  x: 80, y: SUELO, w: 44, h: 52,
+  vy: 0, agachado: false,
+  enSuelo: true,
+  legFrame: 0,
+
+  saltar() {
+    if (this.enSuelo && !this.agachado) {
+      this.vy = -16;
+      this.enSuelo = false;
+    }
+  },
+
+  update() {
+    if (this.agachado) {
+      this.h = 32; this.y = SUELO + 20;
+    } else {
+      this.h = 52;
+    }
+    if (!this.enSuelo) {
+      this.vy += 0.85;
+      this.y += this.vy;
+      if (this.y >= SUELO) {
+        this.y = SUELO;
+        this.vy = 0;
+        this.enSuelo = true;
+      }
+    }
+    if (this.enSuelo) this.legFrame = (frameCount % 12 < 6) ? 0 : 1;
+  },
+
+  draw() {
+    ctx.save();
+    const px = this.x, py = this.y - this.h;
+    ctx.fillStyle = "#E6EDF3";
+
+    if (this.agachado) {
+      ctx.fillRect(px, py + 8, 44, 24);
+      ctx.fillRect(px + 8, py, 28, 12);
+      ctx.fillStyle = "#0D1117";
+      ctx.fillRect(px + 30, py + 4, 6, 6);
+      ctx.fillStyle = "#E6EDF3";
+      ctx.fillRect(px + 33, py + 5, 2, 2);
+      const lx = this.legFrame === 0 ? [px + 10, px + 30] : [px + 14, px + 26];
+      lx.forEach(x => { ctx.fillStyle = "#E6EDF3"; ctx.fillRect(x, py + 30, 8, 10); });
+    } else {
+      ctx.fillRect(px + 14, py, 30, 26);
+      ctx.fillStyle = "#0D1117";
+      ctx.fillRect(px + 34, py + 6, 7, 7);
+      ctx.fillStyle = "#E6EDF3";
+      ctx.fillRect(px + 37, py + 7, 3, 3);
+      ctx.fillStyle = "#0D1117";
+      ctx.fillRect(px + 42, py + 18, 4, 3);
+      ctx.fillStyle = "#E6EDF3";
+      ctx.fillRect(px, py + 20, 32, 26);
+      ctx.fillRect(px - 10, py + 32, 16, 10);
+      ctx.fillRect(px - 16, py + 40, 12, 8);
+      ctx.fillRect(px + 20, py + 40, 12, 6);
+      if (!this.enSuelo) {
+        ctx.fillRect(px + 6, py + 46, 10, 6);
+        ctx.fillRect(px + 20, py + 46, 10, 6);
+      } else if (this.legFrame === 0) {
+        ctx.fillRect(px + 4, py + 46, 10, 14);
+        ctx.fillRect(px + 4, py + 58, 14, 6);
+        ctx.fillRect(px + 20, py + 46, 10, 8);
+        ctx.fillRect(px + 20, py + 52, 4, 2);
+      } else {
+        ctx.fillRect(px + 4, py + 46, 10, 8);
+        ctx.fillRect(px + 4, py + 52, 4, 2);
+        ctx.fillRect(px + 20, py + 46, 10, 14);
+        ctx.fillRect(px + 20, py + 58, 14, 6);
+      }
+    }
+    ctx.restore();
+  }
+};
+
+// ══════════════════════════════════════════════
+//  OBSTÁCULOS — Cactus (suelo) + Pterodáctilos (aéreos)
+// ══════════════════════════════════════════════
+let obstaculos = [];
+let nextObstaculo = 120;  // ← Más espacio al inicio
+
+function crearObstaculo() {
+  // Decidir: cactus en suelo o pterodáctilo aéreo
+  // Los pterodáctilos aparecen después de 300 puntos para dar tiempo de aprendizaje
+  const puedeSerAereo = score > 300;
+  const esAereo = puedeSerAereo && Math.random() < 0.35;  // 35% chance de aéreo
+
+  if (esAereo) {
+    // Pterodáctilo — vuela a la altura de la cabeza del dino (hay que agacharse)
+    const alturas = [SUELO - 60, SUELO - 55, SUELO - 50];
+    const yPtero = alturas[Math.floor(Math.random() * alturas.length)];
+    obstaculos.push({
+      x: W + 20,
+      y: yPtero,
+      w: 46,
+      h: 30,
+      tipo: 'pterodactilo',
+      wingFrame: 0
+    });
+  } else {
+    // Cactus clásico en el suelo
+    const tipos = [
+      { w: 20, h: 50 }, { w: 16, h: 70 }, { w: 32, h: 40 },
+      { w: 24, h: 55 }, { w: 14, h: 80 }
+    ];
+    const t = tipos[Math.floor(Math.random() * tipos.length)];
+    obstaculos.push({
+      x: W + 20,
+      y: SUELO - t.h + 4,
+      w: t.w,
+      h: t.h,
+      tipo: 'cactus'
+    });
+  }
+}
+
+function drawCactus(o) {
+  ctx.fillStyle = "#00E5BD";
+  ctx.fillRect(o.x + o.w/2 - 5, o.y, 10, o.h);
+  if (o.h > 50) {
+    ctx.fillRect(o.x, o.y + o.h * 0.3, o.w * 0.45, 8);
+    ctx.fillRect(o.x, o.y + o.h * 0.15, 8, o.h * 0.2);
+    ctx.fillRect(o.x + o.w * 0.55, o.y + o.h * 0.35, o.w * 0.45, 8);
+    ctx.fillRect(o.x + o.w - 8, o.y + o.h * 0.2, 8, o.h * 0.2);
+  }
+}
+
+function drawPterodactilo(o) {
+  ctx.save();
+  const px = o.x, py = o.y;
+
+  // Animación de aleteo
+  o.wingFrame = (o.wingFrame || 0) + 0.15;
+  const wingUp = Math.sin(o.wingFrame * Math.PI) > 0;
+
+  // Color púrpura para diferenciar de cactus
+  ctx.fillStyle = "#A855F7";
+
+  // Cuerpo
+  ctx.fillRect(px + 8, py + 12, 28, 10);
+
+  // Cabeza
+  ctx.fillRect(px + 34, py + 8, 12, 14);
+  // Pico
+  ctx.fillStyle = "#F59E0B";
+  ctx.fillRect(px + 44, py + 14, 8, 4);
+  ctx.fillStyle = "#A855F7";
+
+  // Ojo
+  ctx.fillStyle = "#0D1117";
+  ctx.fillRect(px + 40, py + 10, 4, 4);
+  ctx.fillStyle = "#A855F7";
+
+  // Alas animadas
+  if (wingUp) {
+    // Alas arriba
+    ctx.fillRect(px + 10, py + 4, 24, 8);
+    ctx.fillRect(px + 4,  py,     12, 6);
+  } else {
+    // Alas abajo
+    ctx.fillRect(px + 10, py + 22, 24, 8);
+    ctx.fillRect(px + 4,  py + 26, 12, 6);
+  }
+
+  // Cola
+  ctx.fillRect(px, py + 14, 10, 6);
+  ctx.fillRect(px - 6, py + 12, 8, 4);
+
+  // Indicador de peligro: «¡AGÁCHATE!» glow
+  ctx.globalAlpha = 0.12 + Math.sin(frameCount * 0.1) * 0.08;
+  ctx.fillStyle = "#A855F7";
+  ctx.beginPath();
+  ctx.ellipse(px + 23, py + 15, 36, 24, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+
+  ctx.restore();
+}
+
+// ── Nubes ──
+let nubes = [{x:200,y:40},{x:450,y:25},{x:620,y:55}];
+
+// ── Suelo ──
+let sueloOffset = 0;
+const sueloPuntos = [];
+for (let i = 0; i < 200; i++) sueloPuntos.push(Math.random() < 0.15 ? 3 : Math.random() < 0.1 ? 2 : 0);
+
+// ── Colisión ──
+function colision(a, b) {
+  const margin = 6;
+  return a.x + margin < b.x + b.w - margin &&
+         a.x + a.w - margin > b.x + margin &&
+         a.y + margin < b.y + b.h &&
+         a.y + a.h > b.y + margin;
+}
+
+// ── Hitbox del dino (se ajusta según si está agachado) ──
+function getDinoHitbox() {
+  return {
+    x: dino.x,
+    y: dino.y - dino.h,
+    w: dino.w,
+    h: dino.h
+  };
+}
+
+// ── Loop principal ──
+function gameLoop() {
+  frameCount++;
+  ctx.clearRect(0, 0, W, H);
+
+  // Fondo
+  ctx.fillStyle = "#13181F";
+  ctx.fillRect(0, 0, W, H);
+
+  // Nubes
+  nubes.forEach(n => {
+    ctx.fillStyle = "rgba(139,148,158,0.15)";
+    ctx.beginPath();
+    ctx.ellipse(n.x, n.y, 40, 14, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.ellipse(n.x-20, n.y+5, 24, 10, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.ellipse(n.x+20, n.y+5, 28, 10, 0, 0, Math.PI*2);
+    ctx.fill();
+    if (gameStarted) n.x -= velocidad * 0.3;
+    if (n.x < -60) n.x = W + 60;
+  });
+
+  // Suelo
+  ctx.fillStyle = "#21262D";
+  ctx.fillRect(0, SUELO + 4, W, 2);
+  sueloOffset = (sueloOffset + velocidad) % 20;
+  ctx.fillStyle = "#21262D";
+  for (let i = 0; i < W; i += 20) {
+    const idx = Math.floor((i + sueloOffset) / 20) % sueloPuntos.length;
+    const h = sueloPuntos[idx];
+    if (h > 0) ctx.fillRect(i - sueloOffset % 20, SUELO + 8, 3, h);
+  }
+
+  if (!gameStarted) {
+    ctx.fillStyle = "rgba(0,201,167,0.08)";
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "#8B949E";
+    ctx.font = "14px 'JetBrains Mono'";
+    ctx.textAlign = "center";
+    ctx.fillText("APRIETA EL PUÑO PARA INICIAR", W/2, H/2 - 10);
+    ctx.fillStyle = "#00E5BD";
+    ctx.font = "11px 'JetBrains Mono'";
+    ctx.fillText("EMG // CONTROL MUSCULAR", W/2, H/2 + 14);
+    ctx.textAlign = "left";
+    dino.draw();
+    requestAnimationFrame(gameLoop);
+    return;
+  }
+
+  if (gameOver) {
+    dino.draw();
+    obstaculos.forEach(o => {
+      if (o.tipo === 'pterodactilo') drawPterodactilo(o);
+      else drawCactus(o);
+    });
+    requestAnimationFrame(gameLoop);
+    return;
+  }
+
+  // Actualizar velocidad con giro
+  const velBase = 3.5 + Math.floor(score / 800) * 0.3;
+  velocidad = gestoActual === "giro" ? velBase * 1.5 : velBase;
+
+  // Dinosaurio
+  dino.agachado = (gestoActual === "mano_abierta");
+  if (gestoActual === "puno") dino.saltar();
+  dino.update();
+  dino.draw();
+
+  // ── Obstáculos ──
+  nextObstaculo--;
+  if (nextObstaculo <= 0) {
+    crearObstaculo();
+    // Intervalo más largo para dar tiempo a reaccionar con EMG
+    // Base 110-190 frames (~1.8 a 3.2 segundos a 60fps) menos ajuste por velocidad
+    nextObstaculo = 110 + Math.floor(Math.random() * 80) - Math.floor(velocidad * 3);
+    nextObstaculo = Math.max(nextObstaculo, 65);  // Mínimo ~1 segundo
+  }
+
+  obstaculos = obstaculos.filter(o => o.x + o.w > 0);
+  const dinoHB = getDinoHitbox();
+
+  obstaculos.forEach(o => {
+    o.x -= velocidad;
+
+    if (o.tipo === 'pterodactilo') {
+      drawPterodactilo(o);
+    } else {
+      drawCactus(o);
+    }
+
+    if (gestoActual !== "reposo" && colision(dinoHB, o)) {
+      gameOver = true;
+      document.getElementById('overlay').classList.add('show');
+      if (score > hi) { hi = score; document.getElementById('hiDisplay').textContent = String(hi).padStart(5,'0'); }
+    }
+  });
+
+  // Score
+  score++;
+  document.getElementById('scoreDisplay').textContent = String(score).padStart(5,'0');
+
+  // Velocidad visual (giro)
+  if (gestoActual === "giro") {
+    ctx.fillStyle = "rgba(245,166,35,0.04)";
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "rgba(245,166,35,0.6)";
+    ctx.font = "10px 'JetBrains Mono'";
+    ctx.textAlign = "right";
+    ctx.fillText("⚡ TURBO", W - 10, 20);
+    ctx.textAlign = "left";
+  }
+
+  requestAnimationFrame(gameLoop);
+}
+
+function reiniciar() {
+  score = 0;
+  gameOver = false;
+  gameStarted = true;
+  obstaculos = [];
+  nextObstaculo = 120;
+  velocidad = 6;
+  dino.y = SUELO;
+  dino.vy = 0;
+  dino.enSuelo = true;
+  dino.agachado = false;
+  document.getElementById('overlay').classList.remove('show');
+}
+
+document.getElementById('btnRestart').onclick = reiniciar;
+
+// ══════════════════════════════════════════════
+//  PANEL DE GESTO
+// ══════════════════════════════════════════════
+const GESTOS_INFO = {
+  reposo:       { emoji:"✋", nombre:"Reposo",       accion:"QUIETO",     color:"#64748B" },
+  puno:         { emoji:"✊", nombre:"Puño cerrado", accion:"SALTAR",     color:"#00E5BD" },
+  mano_abierta: { emoji:"🖐", nombre:"Mano abierta", accion:"AGACHARSE",  color:"#A855F7" },
+  giro:         { emoji:"🔄", nombre:"Giro",         accion:"TURBO ⚡",   color:"#F59E0B" },
+};
+
+const GESTO_ACCENTS = {
+  reposo:       { accent: '#64748B', glow: 'rgba(100,116,139,0.15)' },
+  puno:         { accent: '#00E5BD', glow: 'rgba(0,229,189,0.25)' },
+  mano_abierta: { accent: '#A855F7', glow: 'rgba(168,85,247,0.25)' },
+  giro:         { accent: '#F59E0B', glow: 'rgba(245,158,11,0.25)' },
+};
+
+function actualizarPanelGesto(gesto) {
+  const info = GESTOS_INFO[gesto] || GESTOS_INFO.reposo;
+  const emoji = document.getElementById('gestoEmoji');
+  emoji.textContent = info.emoji;
+  emoji.classList.remove('pulse');
+  void emoji.offsetWidth;
+  emoji.classList.add('pulse');
+  document.getElementById('gestoNombre').textContent = info.nombre;
+  document.getElementById('gestoAccion').textContent = info.accion;
+  document.getElementById('gestoCurrent').textContent = info.nombre.toUpperCase();
+  document.getElementById('gestoAccion').style.color = info.color;
+  const card = document.getElementById('gestoCard');
+  card.classList.toggle('active', gesto !== 'reposo');
+
+  const accentInfo = GESTO_ACCENTS[gesto] || GESTO_ACCENTS.reposo;
+  document.documentElement.style.setProperty('--accent', accentInfo.accent);
+  document.documentElement.style.setProperty('--accent-glow', accentInfo.glow);
+
+  Object.keys(GESTOS_INFO).forEach(g => {
+    const el = document.getElementById('ctrl-' + g);
+    if (el) el.classList.toggle('highlight', g === gesto);
+  });
+
+  const gameZone = document.getElementById('gameZone');
+  if (gameZone) gameZone.classList.toggle('turbo', gesto === 'giro');
+}
+
+// ══════════════════════════════════════════════
+//  SEÑAL EMG (visualización)
+// ══════════════════════════════════════════════
+const sigCanvas = document.getElementById('signalCanvas');
+const sigCtx    = sigCanvas.getContext('2d');
+const sigData   = new Array(sigCanvas.width).fill(30);
+
+function drawSignal(val) {
+  sigData.push(val);
+  if (sigData.length > sigCanvas.width) sigData.shift();
+  sigCtx.clearRect(0, 0, sigCanvas.width, sigCanvas.height);
+  sigCtx.fillStyle = "#0F1520";
+  sigCtx.fillRect(0, 0, sigCanvas.width, sigCanvas.height);
+
+  sigCtx.strokeStyle = "rgba(26,34,50,0.5)";
+  sigCtx.lineWidth = 0.5;
+  for (let y = 0; y < sigCanvas.height; y += 14) {
+    sigCtx.beginPath();
+    sigCtx.moveTo(0, y);
+    sigCtx.lineTo(sigCanvas.width, y);
+    sigCtx.stroke();
+  }
+
+  const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#00E5BD';
+  const mid = sigCanvas.height / 2;
+
+  sigCtx.beginPath();
+  sigCtx.strokeStyle = accentColor;
+  sigCtx.lineWidth = 1;
+  sigCtx.globalAlpha = 0.15;
+  sigData.forEach((v, i) => {
+    const y = mid - (v / 200) * (sigCanvas.height * 0.4);
+    i === 0 ? sigCtx.moveTo(i, y) : sigCtx.lineTo(i, y);
+  });
+  sigCtx.stroke();
+  sigCtx.globalAlpha = 1;
+
+  sigCtx.beginPath();
+  sigCtx.strokeStyle = accentColor;
+  sigCtx.lineWidth = 1.5;
+  sigCtx.shadowColor = accentColor;
+  sigCtx.shadowBlur = 6;
+  sigData.forEach((v, i) => {
+    const y = mid - (v / 200) * (sigCanvas.height * 0.4);
+    i === 0 ? sigCtx.moveTo(i, y) : sigCtx.lineTo(i, y);
+  });
+  sigCtx.stroke();
+  sigCtx.shadowBlur = 0;
+}
+
+// ══════════════════════════════════════════════
+//  WEBSOCKET
+// ══════════════════════════════════════════════
+let ws;
+function conectar() {
+  ws = new WebSocket("ws://127.0.0.1:8765");
+
+  ws.onopen = () => {
+    document.getElementById('dot').classList.add('on');
+    document.getElementById('statusTxt').textContent = "Conectado · ESP32 activo";
+    document.getElementById('statusTxt').classList.add('on');
+  };
+
+  ws.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    gestoActual = data.gesto;
+    actualizarPanelGesto(gestoActual);
+
+    const intensidad = { reposo:10, puno:90, mano_abierta:65, giro:55 };
+    const base = intensidad[gestoActual] || 20;
+    const val = base + (Math.random()-0.5)*30;
+    drawSignal(val);
+    const pct = Math.min(100, Math.max(0, val));
+    document.getElementById('emgBar').style.width = pct + "%";
+    const pctEl = document.getElementById('emgPct');
+    if (pctEl) pctEl.textContent = Math.round(pct) + "%";
+    const colors = { reposo:"#64748B", puno:"#00E5BD", mano_abierta:"#A855F7", giro:"#F59E0B" };
+    document.getElementById('emgBar').style.background = 'linear-gradient(90deg, ' + (colors[gestoActual] || "#00E5BD") + '88, ' + (colors[gestoActual] || "#00E5BD") + ')';
+    document.getElementById('emgBar').style.boxShadow = '0 0 12px ' + (colors[gestoActual] || "#00E5BD") + '40';
+
+    if (gestoActual === "puno" && !gameStarted) {
+      gameStarted = true;
+      document.getElementById('instruccion').style.display = "none";
+    }
+    if (gameOver && gestoActual === "puno") reiniciar();
+  };
+
+  ws.onclose = () => {
+    document.getElementById('dot').classList.remove('on');
+    document.getElementById('statusTxt').textContent = "Sin conexión — corre servidor.py";
+    document.getElementById('statusTxt').classList.remove('on');
+    setTimeout(conectar, 3000);
+  };
+
+  ws.onerror = () => ws.close();
+}
+
+// ══════════════════════════════════════════════
+//  TECLADO (para probar sin ESP32)
+// ══════════════════════════════════════════════
+document.addEventListener('keydown', e => {
+  const map = { ' ':'puno', ArrowDown:'mano_abierta', ArrowRight:'giro', ArrowUp:'reposo' };
+  if (map[e.key]) {
+    gestoActual = map[e.key];
+    actualizarPanelGesto(gestoActual);
+    if (gestoActual === "puno" && !gameStarted) {
+      gameStarted = true;
+      document.getElementById('instruccion').style.display = "none";
+    }
+    if (gameOver && gestoActual === "puno") reiniciar();
+  }
+});
+document.addEventListener('keyup', e => {
+  if ([' ','ArrowDown','ArrowRight'].includes(e.key)) {
+    gestoActual = "reposo";
+    actualizarPanelGesto("reposo");
+  }
+});
+
+// ── Iniciar ──
+conectar();
+gameLoop();
+</script>
+</body>
+</html>
